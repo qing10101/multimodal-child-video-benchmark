@@ -33,6 +33,7 @@ def load_videos(
     invert_label: bool = False,
     max_videos: Optional[int] = None,
     video_extension: str = ".mp4",
+    include: Optional[list[str]] = None,
 ) -> list[ClipRecord]:
     """
     Load one clip record per row of the AV-ASD dataset CSV.
@@ -45,11 +46,17 @@ def load_videos(
         invert_label:    If True, invert the boolean label.
         max_videos:      If set, limit to this many clips (dev runs).
         video_extension: File extension for clip files (default: .mp4).
+        include:         If set, keep only these clip ids (the 701 included clips).
 
     Returns:
         List of ClipRecord objects, one per clip.
     """
     df = pd.read_csv(csv_path)
+    df["Video_ID"] = df["Video_ID"].astype(str).str.strip()
+    if include is not None:
+        n_before = len(df)
+        df = df[df["Video_ID"].isin(set(include))]
+        print(f"  [loader_b] {len(df)} of {n_before} clips are in the included list")
 
     # Video_ID is the clip id verbatim. Rows without the _{start}_{end} suffix
     # cannot be resolved to a clip file, so drop them.
@@ -111,7 +118,7 @@ def load_videos(
         print(
             f"  [loader_b] Warning: {missing_files}/{len(records)} clip file(s) "
             f"not found in '{clips_dir}'. Missing files will fail at inference time. "
-            f"Run scripts/data_preparation/extract_clips.py to cut the rest."
+            f"Cut them with scripts/data_preparation/fetch_clips.py."
         )
 
     gt_count = sum(1 for r in records if r.ground_truth is not None)

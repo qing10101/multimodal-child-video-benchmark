@@ -17,6 +17,11 @@ records which of the nine AV-ASD behaviors each report says the child showed.
 Usage (from the repository root):
     python -m benchmark.runners.run_e2e_matched
     python -m benchmark.runners.run_e2e_matched --score-only
+    # summarize the released judge scores and records
+    python -m benchmark.runners.run_e2e_matched --score-only \
+        --results-dir benchmark/results/table5_end_to_end --cache-dir benchmark/results/records
+
+New runs write to benchmark/results/rerun/ (settings.yaml), never to the released folders.
 
 Result layout:
     <compare_cache_dir>/observations/{extractor}/{clip_id}.json
@@ -74,7 +79,15 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser.add_argument("--clips-csv", default=None,
                         help="Override e2e_matched.clips_csv")
     parser.add_argument("--results-dir", default=None,
-                        help="Override e2e_matched.results_dir")
+                        help="Judge, mention and comparison files (default: e2e_matched.results_dir, "
+                             "benchmark/results/rerun/table5_end_to_end). Use "
+                             "benchmark/results/table5_end_to_end with --score-only to summarize the "
+                             "released scores.")
+    parser.add_argument("--cache-dir", default=None,
+                        help="Observation records and reports (default: compare_common.compare_cache_dir, "
+                             "benchmark/results/rerun/records)")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="Run again the stages that failed in an earlier run")
     parser.add_argument("--max-clips", type=int, default=None, help="Limit number of clips")
     parser.add_argument("--score-only", action="store_true",
                         help="Skip inference; rebuild comparison.json from judge files")
@@ -93,7 +106,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     seed = cfg.get("shuffle_seed", 0)
     results_dir = resolve_path(args.results_dir or cfg["results_dir"])
     judge_dir = os.path.join(results_dir, "judge")
-    cache_dir = resolve_path(common["compare_cache_dir"])
+    cache_dir = resolve_path(args.cache_dir or common["compare_cache_dir"])
 
     def _report_file(cond: str, clip_id: str) -> str:
         c = conditions[cond]
@@ -141,7 +154,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     # Only this comparison's own directories
     own_dirs = {d for ds in stage_dirs.values() for d in ds} | {results_dir}
     for root in sorted(own_dirs):
-        report_cleanup(_TITLE, clean_stale(root, retry_failed=False))
+        report_cleanup(_TITLE, clean_stale(root, retry_failed=args.retry_failed))
 
     judge_default = common.get("judge_max_concurrent", 5)
     limits = {
@@ -149,7 +162,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         mentions_key: component_limit(models_config, mentions_key, 16),
         **{jk: component_limit(models_config, jk, judge_default) for jk in judge_keys},
     }
-    ctx = make_ctx(common, limits, False)
+    ctx = make_ctx(common, limits, args.retry_failed)
     obs_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
     async def _observations(ext: str, clip: ClipRecord) -> Optional[dict]:

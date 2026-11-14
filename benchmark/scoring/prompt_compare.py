@@ -355,15 +355,22 @@ def _summarize_arms(
     }
 
 
-def stage_token_costs(paths_by_arm: dict[str, list[str]]) -> dict:
-    """Sum token_costs and timing_s over the Stage 1/2 files that make up each arm."""
+def stage_token_costs(paths_by_arm: dict[str, list[str]],
+                      clip_ids: Optional[set[str]] = None) -> dict:
+    """
+    Sum token_costs and timing_s over the Stage 1/2 files that make up each arm.
+    Table 4 panel B and Table 5 share one observation folder, so pass clip_ids to
+    count only the clips of one comparison.
+    """
     out: dict = {}
     for arm, dirs in paths_by_arm.items():
         stages = []
         for d in dirs:
             tin = tout = n = 0
             secs: list[float] = []
-            for _, data in _iter_json(d):
+            for clip, data in _iter_json(d):
+                if clip_ids is not None and clip not in clip_ids:
+                    continue
                 costs = data.get("token_costs") or {}
                 tin += costs.get("input_tokens") or 0
                 tout += costs.get("output_tokens") or 0
@@ -401,7 +408,7 @@ def score_b_prompts(
                 per_clip.setdefault(clip, {})[arm] = scores
     result = _summarize_arms(per_clip, arms, baseline_arm, B_DIMENSIONS, _final_judge_score)
     result["composite_formula"] = "0.40×CA/12 + 0.25×S/3 + 0.25×Act/7 + 0.10×(E−7)/28 (Benchmark B)"
-    result["stage_costs"] = stage_token_costs(stage_dirs)
+    result["stage_costs"] = stage_token_costs(stage_dirs, set(per_clip))
     _save_atomic(out_path, result)
     return result
 
@@ -415,7 +422,7 @@ def score_e2e(
 ) -> dict:
     """
     Judge files: {judge_dir}/{clip_id}.json in the Table 5 format
-    (both arms judged side by side, anonymized). Composite = Benchmark C
+    (all arms judged side by side, anonymized). Composite = Benchmark C
     cross-model score.
     """
     per_clip: dict[str, dict[str, dict]] = {}
@@ -434,7 +441,7 @@ def score_e2e(
                 per_clip.setdefault(clip, {})[arm] = scores
     result = _summarize_arms(per_clip, arms, baseline_arm, C_DIMENSIONS, _cross_model_score)
     result["composite_formula"] = "0.40×S/3 + 0.40×Act/7 + 0.20×(E−7)/28 (Benchmark C)"
-    result["stage_costs"] = stage_token_costs(stage_dirs)
+    result["stage_costs"] = stage_token_costs(stage_dirs, set(per_clip))
     _save_atomic(out_path, result)
     return result
 

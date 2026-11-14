@@ -39,6 +39,9 @@ BENCH_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")
 _CLAIM_WAIT_POLLS = 120      # × _CLAIM_POLL_S — how long to wait on another run's claim
 _CLAIM_POLL_S = 5
 
+# Text field value in the released records (benchmark/results/records): not a model output
+REDACTED = "[removed in the public release]"
+
 
 # ---------------------------------------------------------------------------
 # Paths and instantiation
@@ -293,7 +296,12 @@ async def cached_stage(
     Returns the stored result, or None when it is unavailable this run.
     """
     if is_done(path):
-        return load_json(path).get(result_key)
+        result = load_json(path).get(result_key)
+        if result == REDACTED:
+            print(f"  [{label}] {path} is a released record with its text withheld; "
+                  f"use a new --cache-dir to run the models again", flush=True)
+            return None
+        return result
 
     err = prior_error(path)
     if err is not None and not ctx.retry_failed:

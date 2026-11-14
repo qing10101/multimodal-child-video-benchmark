@@ -2,12 +2,13 @@
 
 paths:
   original_videos: dataset/original_videos
-  test_csv: dataset/csvs/dataset.csv          # AV-ASD annotations (python -m benchmark.scripts.fetch_labels)
-  val_csv: dataset/csvs/val.csv
-  results_dir: benchmark/results
-  # The 701 included clips (dataset/clips_screened_pass.txt), cut with
-  # scripts/data_preparation/fetch_clips.py and screened with scripts/analyze_clips.py
-  clips_cache_dir: dataset/clips_video/screened
+  test_csv: dataset/csvs/dataset.csv          # default clip list for Tables 1 and 2 (all AV-ASD rows)
+  labels_csv: dataset/csvs/dataset.csv        # AV-ASD annotations (python -m benchmark.scripts.fetch_labels)
+  included_clips: dataset/clips_screened_pass.txt   # runners use only these 701 clips
+  # New model runs go here, never into the released folders
+  results_dir: benchmark/results/rerun
+  # Clips cut by scripts/data_preparation/fetch_clips.py
+  clips_cache_dir: dataset/clips_video
 
 # Table 1 and Table 4 panel A (behavior labeling)
 benchmark_a:
@@ -26,7 +27,7 @@ benchmark_a:
 
 # Table 2 (report models)
 benchmark_b:
-  clips_dir: dataset/clips_video/screened
+  clips_dir: dataset/clips_video
   csv_path: dataset/csvs/dataset.csv
   label_column: null
   max_videos: null
@@ -45,7 +46,7 @@ benchmark_b:
 
 # Table 4 panel B (report prompts, 100 development clips)
 prompt_compare_b2:
-  results_dir: benchmark/results/table4b_report_prompts
+  results_dir: benchmark/results/rerun/table4b_report_prompts   # released: benchmark/results/table4b_report_prompts
   extractor: gemini-3.7-obs-v3d
   arms:
     report-original: gpt-5.6-sol
@@ -57,7 +58,7 @@ prompt_compare_b2:
 
 # Table 5 (matched end-to-end comparison, evaluation subset)
 e2e_matched:
-  results_dir: benchmark/results/table5_end_to_end
+  results_dir: benchmark/results/rerun/table5_end_to_end   # released: benchmark/results/table5_end_to_end
   conditions:
     single-stage-matched: {video_report: gemini-3.7-matched-single}
     two-stage-same-model: {extractor: gemini-3.7-obs-v3d, report: gemini-3.7-report-v2}
@@ -69,8 +70,10 @@ e2e_matched:
 
 # Shared by Table 4 panel B and Table 5
 compare_common:
-  clips_dir: dataset/clips_video/screened
-  compare_cache_dir: benchmark/results/records     # observation records and reports (text withheld)
+  clips_dir: dataset/clips_video
+  # Observation records and reports of new runs. The released ones are in
+  # benchmark/results/records with their text withheld, so they cannot be reused.
+  compare_cache_dir: benchmark/results/rerun/records
   max_clips: null
   max_concurrent_clips: 16
   judge_max_concurrent: 5

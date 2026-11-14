@@ -58,6 +58,7 @@ from dotenv import load_dotenv
 
 load_dotenv(pathlib.Path(__file__).resolve().parents[2] / ".env")
 
+from benchmark.data.loader import read_clip_list
 from benchmark.data.loader_b import VideoRecord, load_videos
 from benchmark.models.base_text import JudgeModel, ObservationExtractor, ReportModel
 from benchmark.scoring.benchmark_b import (
@@ -935,7 +936,7 @@ Examples:
   python -m benchmark.runners.run_benchmark_b
   python -m benchmark.runners.run_benchmark_b --max-videos 5
   python -m benchmark.runners.run_benchmark_b --score-only
-  python -m benchmark.runners.run_benchmark_b --csv dataset/csvs/val.csv
+  python -m benchmark.runners.run_benchmark_b --csv dataset/csvs/a80_test.csv
         """,
     )
     parser.add_argument(
@@ -953,7 +954,7 @@ Examples:
         "--csv",
         type=str,
         default=None,
-        help="Override the CSV split to use (default: test_csv from settings.yaml)",
+        help="CSV naming the clips (default: dataset/csvs/dataset.csv). Only the 701 included clips are run.",
     )
     parser.add_argument(
         "--retry-failed",
@@ -1083,6 +1084,7 @@ Examples:
         label_column=label_column,
         invert_label=invert_label,
         max_videos=args.max_videos,
+        include=read_clip_list(_resolve_path(settings["paths"]["included_clips"])),
     )
     if not videos:
         print("No clips loaded. Check your CSV path and settings.")

@@ -14,6 +14,11 @@ Clips: prompt_compare_b2.clips_csv (dataset/csvs/b2_dev100.csv).
 Usage (from the repository root):
     python -m benchmark.runners.run_benchmark_b_report_prompts
     python -m benchmark.runners.run_benchmark_b_report_prompts --score-only
+    # summarize the released judge scores
+    python -m benchmark.runners.run_benchmark_b_report_prompts --score-only \
+        --results-dir benchmark/results/table4b_report_prompts
+
+New runs write to benchmark/results/rerun/ (settings.yaml), never to the released folders.
 
 Result layout:
     <compare_cache_dir>/observations/{extractor}/{clip_id}.json
@@ -68,6 +73,16 @@ def main(argv: Optional[list[str]] = None) -> None:
                         help="Limit number of clips")
     parser.add_argument("--score-only", action="store_true",
                         help="Skip inference; rebuild comparison.json from judge files")
+    parser.add_argument("--results-dir", default=None,
+                        help="Judge files and comparison.json (default: prompt_compare_b2.results_dir, "
+                             "benchmark/results/rerun/table4b_report_prompts). Use "
+                             "benchmark/results/table4b_report_prompts with --score-only to summarize "
+                             "the released scores.")
+    parser.add_argument("--cache-dir", default=None,
+                        help="Observation records and reports (default: compare_common.compare_cache_dir, "
+                             "benchmark/results/rerun/records)")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="Run again the stages that failed in an earlier run")
     args = parser.parse_args(argv)
 
     settings = _load_yaml("benchmark/config/settings.yaml")
@@ -80,9 +95,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     baseline_arm: str = cfg.get("baseline_arm", next(iter(arms)))
     judge_keys: list[str] = cfg["judges"]
     language: str = cfg.get("language", "en")
-    results_dir = resolve_path(cfg["results_dir"])
+    results_dir = resolve_path(args.results_dir or cfg["results_dir"])
     judge_dir = os.path.join(results_dir, "judge")
-    cache_dir = resolve_path(common["compare_cache_dir"])
+    cache_dir = resolve_path(args.cache_dir or common["compare_cache_dir"])
 
     obs_dir = os.path.dirname(obs_path(cache_dir, ext_key, "x"))
     report_dirs = {
@@ -123,7 +138,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     # Only this comparison's own directories: never touch other runs' cache entries
     for root in (obs_dir, *report_dirs.values(), results_dir):
-        report_cleanup(_TITLE, clean_stale(root, retry_failed=False))
+        report_cleanup(_TITLE, clean_stale(root, retry_failed=args.retry_failed))
 
     judge_default = common.get("judge_max_concurrent", 5)
     limits = {
@@ -131,7 +146,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         **{rk: component_limit(models_config, rk, 5) for rk in arms.values()},
         **{jk: component_limit(models_config, jk, judge_default) for jk in judge_keys},
     }
-    ctx = make_ctx(common, limits, False)
+    ctx = make_ctx(common, limits, args.retry_failed)
 
     async def _process(clip: ClipRecord) -> None:
         observations = await cached_stage(

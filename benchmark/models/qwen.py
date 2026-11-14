@@ -76,6 +76,12 @@ def _build_messages(clip_path: str) -> list:
     Build OpenAI-compatible message list.
     clip_path is expected to be an HTTPS URL (CloudFront or other).
     """
+    if not clip_path.startswith(("https://", "http://")):
+        raise ValueError(
+            f"Qwen 3.8 Max needs the clip as a URL, got a local path '{clip_path}'. Upload the "
+            f"clips (scripts/upload_clips_to_s3.py) and set s3_bucket and cloudfront_domain for "
+            f"qwen-3.8-max in benchmark/config/models.yaml."
+        )
     return [
         {
             "role": "user",

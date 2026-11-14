@@ -72,7 +72,7 @@ from benchmark.data.clip_extractor import (
     extract_clip,
     temp_clip,
 )
-from benchmark.data.loader import load_clips, ClipRecord
+from benchmark.data.loader import load_clips, read_clip_list, ClipRecord
 from benchmark.models.base import BehaviorPrediction, VideoModel
 from benchmark.scoring.benchmark_a import (
     assemble_leaderboard,
@@ -703,7 +703,11 @@ Examples:
         "--csv",
         type=str,
         default=None,
-        help="Override the CSV split to use (default: test.csv from settings.yaml)",
+        help=(
+            "CSV naming the clips (default: paths.test_csv, dataset/csvs/dataset.csv). "
+            "A clip list without label columns, such as dataset/csvs/a80_test.csv, gets its "
+            "labels from paths.labels_csv. Only the 701 included clips are run."
+        ),
     )
     parser.add_argument(
         "--clips-dir",
@@ -833,7 +837,12 @@ Examples:
         return
 
     # --- Full inference run ---
-    clips = load_clips(csv_path, max_clips=max_clips)
+    clips = load_clips(
+        csv_path,
+        max_clips=max_clips,
+        labels_csv=_resolve_path(settings["paths"]["labels_csv"]),
+        include=read_clip_list(_resolve_path(settings["paths"]["included_clips"])),
+    )
     if not clips:
         print("No clips loaded. Check your CSV path and settings.")
         sys.exit(1)

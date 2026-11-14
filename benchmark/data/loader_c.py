@@ -40,7 +40,7 @@ def load_clips(
     if not os.path.isdir(clips_dir):
         raise FileNotFoundError(
             f"Clips directory not found: '{clips_dir}'. "
-            f"Run the download step first (see BENCHMARK_C.md § Implementation Plan)."
+            f"Cut the clips first with scripts/data_preparation/fetch_clips.py (see README.md)."
         )
 
     records: list[ClipRecord] = []

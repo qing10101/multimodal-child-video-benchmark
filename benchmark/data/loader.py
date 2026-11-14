@@ -5,6 +5,7 @@ Handles clip_id parsing (format: {video_id}_{start_sec}_{end_sec}).
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -46,22 +47,57 @@ def parse_clip_id(clip_id: str) -> tuple[str, int, int]:
     return video_id, start_sec, end_sec
 
 
+def read_clip_list(path: str) -> list[str]:
+    """Clip ids from a one-id-per-line file such as dataset/clips_screened_pass.txt."""
+    with open(path, encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
 def load_clips(
     csv_path: str,
     max_clips: Optional[int] = None,
+    labels_csv: Optional[str] = None,
+    include: Optional[list[str]] = None,
 ) -> list[ClipRecord]:
     """
-    Load clips from a CSV split file (test.csv / val.csv / train.csv).
+    Load clips from a CSV with a Video_ID column.
 
     Args:
-        csv_path: Path to the CSV file.
-        max_clips: If set, only load this many clips (useful for dev runs).
+        csv_path:   CSV naming the clips (dataset.csv, or a clip list such as
+                    dataset/csvs/a80_test.csv, which has only Video_ID).
+        max_clips:  If set, only load this many clips (useful for dev runs).
+        labels_csv: AV-ASD annotations (dataset/csvs/dataset.csv). Used when csv_path
+                    has no label columns, so a clip list gets its reference labels.
+        include:    If set, keep only these clip ids (the 701 included clips).
 
     Returns:
         List of ClipRecord objects with parsed video info and ground truth labels.
         ground_truth keys are human-readable label names matching LABEL_KEYS.
     """
     df = pd.read_csv(csv_path)
+    df["Video_ID"] = df["Video_ID"].astype(str).str.strip()
+    if include is not None:
+        keep = set(include)
+        n_before = len(df)
+        df = df[df["Video_ID"].isin(keep)]
+        print(f"  [loader] {len(df)} of {n_before} clips are in the included list")
+
+    missing_labels = [l for l in LABEL_KEYS if l not in df.columns]
+    if missing_labels and labels_csv is not None:
+        if not os.path.isfile(labels_csv):
+            raise FileNotFoundError(
+                f"'{csv_path}' has no label columns and '{labels_csv}' is missing. "
+                f"Run: python -m benchmark.scripts.fetch_labels"
+            )
+        labels = pd.read_csv(labels_csv)
+        labels["Video_ID"] = labels["Video_ID"].astype(str).str.strip()
+        labels = labels.drop_duplicates("Video_ID").set_index("Video_ID")[LABEL_KEYS]
+        unlabeled = sorted(set(df["Video_ID"]) - set(labels.index))
+        if unlabeled:
+            raise ValueError(f"{len(unlabeled)} clip(s) in '{csv_path}' have no labels in "
+                             f"'{labels_csv}', e.g. {unlabeled[:3]}")
+        df = df.drop(columns=[l for l in LABEL_KEYS if l in df.columns]).join(labels, on="Video_ID")
+
     if max_clips is not None:
         df = df.head(max_clips)
 

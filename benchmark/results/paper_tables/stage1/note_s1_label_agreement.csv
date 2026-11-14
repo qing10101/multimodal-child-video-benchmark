@@ -1,4 +1,4 @@
-overall_label_agreement,included_clips_n,included_clips_pct
+overall_label_agreement,gemini_valid_outputs_n,gemini_valid_outputs_pct
 10/10,363,52.4
 9/10,122,17.6
 8/10,132,19.0

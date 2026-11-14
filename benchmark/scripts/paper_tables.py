@@ -11,8 +11,8 @@ Subcommands and outputs (all under benchmark/results/paper_tables/):
                      Supplementary Note S1 label agreement
   table2    table2/  Table 2 and Supplementary Table S3
   table4a   table4a/ Table 4 panel A and the Supplementary Note S1 per-label results
-  table4b   table4b/ Table 4 panel B
-  table5    table5/  Table 5 and token counts
+  table4b   table4b/ Table 4 panel B and its excluded clips
+  table5    table5/  Table 5, token counts and excluded clips
 
 Run every subcommand with: bash reproduce.sh
 """
@@ -203,6 +203,11 @@ def _paper_term(s):
 
 def write_csv(out_dir: str, name: str, rows: list[dict]) -> None:
     if not rows:
+        # Nothing to write: remove an older copy so it cannot be mistaken for this run's output
+        try:
+            os.remove(os.path.join(out_dir, name))
+        except FileNotFoundError:
+            pass
         return
     rows = [{_paper_term(k): _paper_term(v) for k, v in x.items()} for x in rows]
     with open(os.path.join(out_dir, name), "w", newline="", encoding="utf-8") as f:
@@ -360,9 +365,11 @@ def stage1_tables(out_dir: str, gt: dict, included: list[str], args) -> list[str
         pred = x.get("asd_behavioral_metrics", {})
         agree[sum(1 for l in LABEL_KEYS if as_bool(pred.get(l)) is gt[c][l])] += 1
     n = sum(agree.values())
-    t1 = [{"overall_label_agreement": f"{k}/10", "included_clips_n": agree.get(k, 0),
-           "included_clips_pct": round(agree.get(k, 0) / n * 100, 1)} for k in range(10, -1, -1)]
-    t1.append({"overall_label_agreement": "Total", "included_clips_n": n, "included_clips_pct": 100.0})
+    # Denominator: the included clips with a valid Gemini 3.7 Flash output (693 of 701)
+    t1 = [{"overall_label_agreement": f"{k}/10", "gemini_valid_outputs_n": agree.get(k, 0),
+           "gemini_valid_outputs_pct": round(agree.get(k, 0) / n * 100, 1)} for k in range(10, -1, -1)]
+    t1.append({"overall_label_agreement": "Total", "gemini_valid_outputs_n": n,
+               "gemini_valid_outputs_pct": 100.0})
     write_csv(out_dir, "note_s1_label_agreement.csv", t1)
     return common
 
@@ -596,6 +603,8 @@ def table4b_main(argv) -> None:
     ap = argparse.ArgumentParser(prog="python -m benchmark.scripts.paper_tables table4b",
                                  description="Table 4 panel B (report prompts)")
     ap.add_argument("--judge-dir", default="benchmark/results/table4b_report_prompts/judge")
+    ap.add_argument("--clips", default="dataset/csvs/b2_dev100.csv",
+                    help="the 100 development clips of the comparison")
     ap.add_argument("--baseline-arm", default="report-original")
     ap.add_argument("--candidate-arm", default="report-v2")
     ap.add_argument("--judges", default="muse-judge,deepseek-v4-pro-judge,claude-opus-5-judge")
@@ -629,6 +638,17 @@ def table4b_main(argv) -> None:
 
     out_dir = path(args.out)
     os.makedirs(out_dir, exist_ok=True)
+    listed = read_ids(args.clips)
+    excluded = []
+    for c in listed:
+        if c in means:
+            continue
+        missing = [a for a in arms if c not in raw[a]]
+        reason = ("no judge file in either arm" if len(missing) == len(arms)
+                  else f"no judge file for {', '.join(missing)}" if missing
+                  else "judge scores incomplete")
+        excluded.append({"clip_id": c, "reason": reason})
+    write_csv(out_dir, "table4b_excluded_clips.csv", excluded)
     clips = sorted(means)
     bs = ClusteredBootstrap(clips, args.n_boot, args.seed)
     n_b = bs.resample(np.ones(len(clips)))
@@ -644,7 +664,8 @@ def table4b_main(argv) -> None:
                      "paired_difference": r(xb.mean() - xa.mean()), "diff_ci_lo": r(lo),
                      "diff_ci_hi": r(hi)})
     write_csv(out_dir, "table4b.csv", rows)
-    write_run_info(out_dir, {"judge_dir": args.judge_dir, "arms": arms, "judges": judges,
+    write_run_info(out_dir, {"judge_dir": args.judge_dir, "clips": args.clips, "arms": arms,
+                             "judges": judges, "clips_listed": len(listed),
                              "clips_with_judge_files": len(both), "n_boot": args.n_boot, "seed": args.seed})
     print(f"Wrote Table 4 panel B to {os.path.relpath(out_dir, ROOT)}/ ({len(clips)} clips)")
 
@@ -947,20 +968,20 @@ def table2_main(argv) -> None:
     def order(fn):
         means = {m: np.mean([fn(c, m) for c in clips]) for m in models}
         return " > ".join(REPORT_SHORT[m] for m in sorted(means, key=means.get, reverse=True))
-    s3c = [{"aggregation": "All three judges (primary)", "rank_order": order(lambda c, m: judge_mean(prim[c], m, "composite"))}]
+    loo_rows = [{"aggregation": "All three judges (primary)", "rank_order": order(lambda c, m: judge_mean(prim[c], m, "composite"))}]
     for j in judges:
         js = [x for x in judges if x != j]
-        s3c.append({"aggregation": f"Excluding {TABLE2_JUDGES[j]}",
-                    "rank_order": order(lambda c, m, js=js: judge_mean(prim[c], m, "composite", js))})
-    write_csv(out_dir, "table_s3b_leave_one_judge_out.csv", s3c)
-    s6 = []
+        loo_rows.append({"aggregation": f"Excluding {TABLE2_JUDGES[j]}",
+                         "rank_order": order(lambda c, m, js=js: judge_mean(prim[c], m, "composite", js))})
+    write_csv(out_dir, "table_s3b_leave_one_judge_out.csv", loo_rows)
+    equal_weight_rows = []
     for name, fn in (("Primary weights", lambda dd: dd["composite"]), ("Equal weights", equal_weight)):
         row = {"scoring_variant": name, "rank_order": order(lambda c, m, fn=fn: judge_mean(prim[c], m, None, fn=fn))}
         for m in models:
             v, lo, hi = mean_ci([judge_mean(prim[c], m, None, fn=fn) for c in clips])
             row[REPORT_MODELS[m]], row[REPORT_MODELS[m] + "_ci_lo"], row[REPORT_MODELS[m] + "_ci_hi"] = r(v), r(lo), r(hi)
-        s6.append(row)
-    write_csv(out_dir, "table_s3b_equal_weights.csv", s6)
+        equal_weight_rows.append(row)
+    write_csv(out_dir, "table_s3b_equal_weights.csv", equal_weight_rows)
 
     # S3 note: judge-returned totals checked against item sums
     def audit(cohort_clips):

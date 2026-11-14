@@ -113,8 +113,11 @@ def normalize_report(report_output: dict) -> dict:
     Flatten a raw model report_output to the canonical plain-text schema.
 
     Accepts both the outer wrapper ({report: {...}}) and the inner report dict
-    directly.  Returns the canonical dict; never raises.
+    directly.  Returns the canonical dict; never raises. A non-dict input (for
+    example the "[removed in the public release]" placeholder) gives empty fields.
     """
+    if not isinstance(report_output, dict):
+        report_output = {}
     # Unwrap outer {report: ...} envelope if present
     inner = report_output
     if "report" in report_output and isinstance(report_output["report"], dict):
